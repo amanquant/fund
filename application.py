@@ -22,34 +22,45 @@ st.set_page_config(page_title="Portfolio Dashboard with Mean Variance", layout="
 
 def manual_portfolio_optimization(returns, risk_free_rate=0.0):
     """Manual implementation of mean variance optimization"""
-    mu = returns.mean() * 252  # Annualized returns
-    cov_matrix = returns.cov() * 252  # Annualized covariance
-    
-    n_assets = len(mu)
-    
-    # Equal weight portfolio as baseline
-    equal_weights = np.array([1/n_assets] * n_assets)
-    
-    # Simple optimization - maximize Sharpe ratio
-    # This is a simplified version - in practice you'd use scipy.optimize
-    best_sharpe = -np.inf
-    best_weights = equal_weights
-    
-    # Random search for better weights (simplified optimization)
-    for _ in range(1000):
-        weights = np.random.random(n_assets)
-        weights = weights / weights.sum()  # Normalize to sum to 1
+    try:
+        mu = returns.mean() * 252  # Annualized returns
+        cov_matrix = returns.cov() * 252  # Annualized covariance
         
-        portfolio_return = np.dot(weights, mu)
-        portfolio_vol = np.sqrt(np.dot(weights, np.dot(cov_matrix, weights)))
+        n_assets = len(mu)
         
-        if portfolio_vol > 0:
-            sharpe = (portfolio_return - risk_free_rate) / portfolio_vol
-            if sharpe > best_sharpe:
-                best_sharpe = sharpe
-                best_weights = weights
+        # Equal weight portfolio as baseline
+        equal_weights = np.array([1/n_assets] * n_assets)
+        
+        # Simple optimization - maximize Sharpe ratio
+        best_sharpe = -np.inf
+        best_weights = equal_weights.copy()
+        
+        # Random search for better weights (simplified optimization)
+        np.random.seed(42)  # For reproducibility
+        for _ in range(1000):
+            weights = np.random.random(n_assets)
+            weights = weights / weights.sum()  # Normalize to sum to 1
+            
+            portfolio_return = np.dot(weights, mu)
+            portfolio_vol = np.sqrt(np.dot(weights, np.dot(cov_matrix, weights)))
+            
+            if portfolio_vol > 0:
+                sharpe = (portfolio_return - risk_free_rate) / portfolio_vol
+                if sharpe > best_sharpe:
+                    best_sharpe = sharpe
+                    best_weights = weights.copy()
+        
+        # Ensure weights sum to 1
+        best_weights = best_weights / best_weights.sum()
+        
+        return pd.DataFrame(best_weights, index=returns.columns, columns=['Weight'])
     
-    return pd.DataFrame(best_weights, index=returns.columns, columns=['Weight'])
+    except Exception as e:
+        st.warning(f"Manual optimization failed: {str(e)}. Using equal weights.")
+        # Fallback to equal weights
+        n_assets = len(returns.columns)
+        equal_weights = np.array([1/n_assets] * n_assets)
+        return pd.DataFrame(equal_weights, index=returns.columns, columns=['Weight'])
 
 def create_efficient_frontier(returns, num_portfolios=50):
     """Create efficient frontier manually"""
@@ -145,11 +156,11 @@ try:
     
     # Handle single asset case
     if len(selected_assets) == 1:
-        data.columns = ['Close']
+        data.columns = ['Adj Close']
         data = data.to_frame()
         data.columns = selected_assets
     else:
-        data = data['Close']
+        data = data['Adj Close']
     
     progress_bar.progress(40)
     status_text.text("Calculating returns...")
@@ -162,31 +173,50 @@ try:
     
     # Portfolio optimization
     if RISKFOLIO_AVAILABLE and len(selected_assets) > 1:
-        # Use RiskFolio
-        port = rp.Portfolio(returns=returns)
-        port.assets_stats(method_mu='hist', method_cov='hist')
-        
-        optimal_weights = port.optimization(
-            model='Classic',
-            rm='MV',
-            obj='Sharpe',
-            rf=risk_free_rate,
-            hist=True
-        )
-        
-        # Create efficient frontier
-        frontier = port.efficient_frontier(
-            model='Classic',
-            rm='MV',
-            points=50,
-            rf=risk_free_rate,
-            hist=True
-        )
-        
+        try:
+            # Use RiskFolio
+            port = rp.Portfolio(returns=returns)
+            port.assets_stats(method_mu='hist', method_cov='hist')
+            
+            optimal_weights = port.optimization(
+                model='Classic',
+                rm='MV',
+                obj='Sharpe',
+                rf=risk_free_rate,
+                hist=True
+            )
+            
+            # Check if optimization was successful
+            if optimal_weights is None:
+                st.warning("RiskFolio optimization failed. Using manual optimization.")
+                optimal_weights = manual_portfolio_optimization(returns, risk_free_rate)
+                frontier = None
+            else:
+                # Create efficient frontier
+                try:
+                    frontier = port.efficient_frontier(
+                        model='Classic',
+                        rm='MV',
+                        points=50,
+                        rf=risk_free_rate,
+                        hist=True
+                    )
+                except:
+                    frontier = None
+                    st.warning("Could not generate efficient frontier.")
+        except Exception as e:
+            st.warning(f"RiskFolio optimization failed: {str(e)}. Using manual optimization.")
+            optimal_weights = manual_portfolio_optimization(returns, risk_free_rate)
+            frontier = None
     else:
         # Use manual optimization
         optimal_weights = manual_portfolio_optimization(returns, risk_free_rate)
         frontier = None
+    
+    # Ensure optimal_weights is not None
+    if optimal_weights is None:
+        st.error("Portfolio optimization failed. Please try different parameters.")
+        st.stop()
     
     progress_bar.progress(80)
     status_text.text("Creating visualizations...")
@@ -409,4 +439,3 @@ except Exception as e:
 # Footer
 st.markdown("---")
 st.markdown("Built with Streamlit • Portfolio optimization using Modern Portfolio Theory")
-
