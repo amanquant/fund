@@ -409,8 +409,3 @@ except Exception as e:
 # Footer
 st.markdown("---")
 st.markdown("Built with Streamlit • Portfolio optimization using Modern Portfolio Theory")
-
-    except Exception as e:
-        st.error(f"Failed to load or process data: {e}")
-
-
