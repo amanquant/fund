@@ -145,11 +145,11 @@ try:
     
     # Handle single asset case
     if len(selected_assets) == 1:
-        data.columns = ['Adj Close']
+        data.columns = ['Close']
         data = data.to_frame()
         data.columns = selected_assets
     else:
-        data = data['Adj Close']
+        data = data['Close']
     
     progress_bar.progress(40)
     status_text.text("Calculating returns...")
@@ -409,3 +409,4 @@ except Exception as e:
 # Footer
 st.markdown("---")
 st.markdown("Built with Streamlit • Portfolio optimization using Modern Portfolio Theory")
+
